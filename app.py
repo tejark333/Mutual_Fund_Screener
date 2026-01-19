@@ -84,7 +84,7 @@ with r2c4:
 # -----------------------------
 
 benchmark_code = TRI_BENCHMARKS[benchmark_name]
-bench_df = read_tri(R"data\\"+benchmark_code)
+bench_df = read_tri(os.path.join("data", benchmark_code))
 
 
 aum_df = load_clean_aum()
