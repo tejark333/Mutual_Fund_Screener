@@ -97,7 +97,7 @@ def fund_analytics_page():
                 "🧮 Consistency",
                 "⚠️ Risk Metrics",
                 "📋 Rating",
-                " Historical Rating"
+                "🕰️ Historical Rating"
             ])
     
     
