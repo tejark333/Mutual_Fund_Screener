@@ -1,6 +1,6 @@
 import streamlit as st
-import os
 from analytics import *
+import os
 
 # -----------------------------
 # PAGE CONFIG
@@ -10,7 +10,7 @@ st.set_page_config(
     page_title="Mutual Fund Analytics"
 )
 
-st.title("📊 Mutual Fund Rolling Return Analytics")
+st.title("📊 Mutual Fund Analytics")
 
 # -----------------------------
 # LOAD MASTER DATA
@@ -251,11 +251,7 @@ if run:
         c1.metric("vs Category Median (%)", scores["median_consistency"])
         c2.metric("vs Category Mean (%)", scores["mean_consistency"])
 
-    consistency_metric = st.radio(
-    "Consistency Comparison Basis",
-    ["median", "mean"],
-    horizontal=True
-)
+    consistency_metric = 'median'
 
     
     cons_df = consistency_for_top_n(
@@ -280,9 +276,6 @@ if run:
     plot_consistency_vs_aum_rank(cons_df, amfi_code),
     use_container_width=True
 )
-
-
-    st.subheader("Top Funds – AUM & Consistency")
 
     table_df = cons_df.sort_values("aum_cr", ascending=False)
     table_df["aum_rank"] = range(1, len(table_df) + 1)

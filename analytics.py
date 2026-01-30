@@ -8,7 +8,7 @@ import zipfile
 import io
 import requests
 import plotly.express as px
-
+import re
 
 
 plt.rcParams.update({
@@ -19,6 +19,22 @@ plt.rcParams.update({
     "ytick.labelsize": 6,
     "legend.fontsize": 6
 })
+
+RATING_ORDER = {
+    "Weak": 1,
+    "Average": 2,
+    "Good": 3,
+    "Very Good": 4,
+    "Excellent": 5,
+}
+
+RATING_COLORS = {
+    1: "#d73027",   # Weak - red
+    2: "#fc8d59",   # Average - orange
+    3: "#fee08b",   # Good - yellow
+    4: "#91cf60",   # Very Good - light green
+    5: "#1a9850",   # Excellent - dark green
+}
 # -----------------------------
 # AMFI MASTER (LIVE)
 # -----------------------------
@@ -34,9 +50,7 @@ TRI_BENCHMARKS = {
 
 @st.cache_data(ttl=24 * 60 * 60)
 def load_amfi_master():
-    import requests
-    import pandas as pd
-    import re
+
 
     url = "https://www.amfiindia.com/spages/NAVAll.txt"
     response = requests.get(url)
@@ -77,7 +91,7 @@ def load_amfi_master():
     df = df.dropna(subset=["category"])
 
     return df
-
+int_master_df = load_amfi_master()
 
 
 def get_categories(master_df):
@@ -103,6 +117,23 @@ def get_top_n_by_aum(master_df, aum_df, category, n):
     top_df = df.sort_values("aum_cr", ascending=False).head(n)
 
     return sorted(top_df["amfi_code"].tolist()), top_df
+
+def add_aum_to_funds(master_df, aum_df, selected_codes):
+    df = master_df[master_df["amfi_code"].isin(selected_codes)]
+
+    # ---- FIX: normalize merge key types
+    df["amfi_code"] = df["amfi_code"].astype(str)
+    aum_df["amfi_code"] = aum_df["amfi_code"].astype(str)
+
+    df = df.merge(
+        aum_df,
+        on="amfi_code",
+        how="inner"
+    )
+
+    top_df = df.sort_values("aum_cr", ascending=False)
+
+    return top_df
 
 def consistency_for_top_n(
     top_df,
@@ -195,13 +226,33 @@ def get_funds_by_category(master_df, category):
     ]
 
     return df.sort_values("scheme_name")
+    
+def get_direct_growth_funds(master_df):
+    # ✅ Keep only Direct Growth plans
+    df = master_df.copy()
+    df = df[
+        df["scheme_name"].str.contains("Direct", case=False, na=False) &
+        df["scheme_name"].str.contains("Growth", case=False, na=False)
+    ]
 
+    return df.sort_values("scheme_name")
 
 def get_amfi_code(master_df, category, fund_name):
-    return master_df[
-        (master_df["category"] == category) &
-        (master_df["scheme_name"] == fund_name)
+    if category == "NA":
+        return master_df[
+            (master_df["scheme_name"] == fund_name)
     ]["amfi_code"].values[0]
+    else:
+        return master_df[
+            (master_df["category"] == category) &
+            (master_df["scheme_name"] == fund_name)
+    ]["amfi_code"].values[0]
+
+def get_fund_name(master_df, amfi_code):
+
+    return master_df[
+        (master_df["amfi_code"] == amfi_code)
+]["scheme_name"].values[0]
 
 
 # -----------------------------
@@ -438,7 +489,7 @@ def category_risk_metrics_monthly(
     lookback_months=36
 ):
     metrics = []
-
+    codes = []
     for code in category_amfi_codes:
         nav_df = fetch_nav_data(code)
         m = risk_metrics_monthly(
@@ -449,11 +500,14 @@ def category_risk_metrics_monthly(
         )
         if m:
             metrics.append(m)
+            codes.append(code)
+        else:
+            print(code)
 
     if not metrics:
         return None
         
-    return (pd.DataFrame(metrics,index=category_amfi_codes).reset_index().rename({"index":"amfi_code",
+    return (pd.DataFrame(metrics,index=codes).reset_index().rename({"index":"amfi_code",
                                                                                   "Sharpe": "sharpe",
                                                                                   "Sortino": "sortino",
                                                                                   "Alpha (%)": "alpha",
@@ -562,11 +616,12 @@ def category_calendar_year_returns(category_amfi_codes):
         cal_list.append(cal.rename(code))
 
     combined = pd.concat(cal_list, axis=1)
-    return combined.median(axis=1)
+    return combined.median(axis=1),combined
 
 def category_cagr_summary(category_amfi_codes):
     periods = [1, 3, 5, 7, 10]
     out = {}
+    per_fund = {}
 
     for p in periods:
         vals = []
@@ -677,6 +732,133 @@ def compute_composite_score(category_df):
 
     return df.sort_values("composite_score", ascending=False)
 
+def compute_rating_snapshot(
+    cutoff_date,
+    nav_df,
+    bench_df,
+    top_amfi_codes,
+    cons_df,
+    master_df,
+):
+    ind_cat_metrics, _ = category_risk_metrics_monthly(
+        top_amfi_codes, bench_df, cutoff_date
+    )
+
+    ind_cat_metrics["amfi_code"] = ind_cat_metrics["amfi_code"].astype(str)
+
+    table_df = cons_df.sort_values("aum_cr", ascending=False)
+    table_df["aum_rank"] = range(1, len(table_df) + 1)
+
+    ind_cat_metrics = (
+        ind_cat_metrics
+        .merge(
+            table_df[["amfi_code", "aum_cr", "aum_rank", "consistency"]],
+            how="left",
+            on="amfi_code"
+        )
+        .merge(
+            master_df[["amfi_code", "scheme_name"]],
+            how="left",
+            on="amfi_code"
+        )
+        .rename({"consistency": "consistency_pct"}, axis=1)
+    )
+
+    scored = compute_composite_score(ind_cat_metrics)
+
+    scored["rating"] = scored["composite_score"].apply(score_label)
+    scored["rating_level"] = scored["rating"].map(RATING_ORDER)
+    scored["period_end"] = cutoff_date
+
+    return scored[
+        ["scheme_name", "period_end", "composite_score", "rating", "rating_level"]
+    ]
+
+def get_month_end_dates(end_date, n=6):
+    end = pd.to_datetime(end_date)
+    return sorted(
+        (end - pd.DateOffset(months=i)).to_period("M").to_timestamp("M")
+        for i in range(n)
+    )
+
+
+def get_quarter_end_dates(end_date, n=8):
+    end = pd.to_datetime(end_date)
+    return sorted(
+        (end - pd.DateOffset(months=3 * i)).to_period("Q").to_timestamp("Q")
+        for i in range(n)
+    )
+
+def get_year_end_dates(end_date, n=5):
+    end = pd.to_datetime(end_date)
+    return sorted(
+        (end - pd.DateOffset(months=12 * i)).to_period("Y").to_timestamp("Y")
+        for i in range(n)
+    )
+
+
+def build_monthly_rating_history(
+    nav_df,
+    bench_df,
+    top_amfi_codes,
+    cons_df,
+    master_df,
+    end_date,
+    months=6,
+):
+    dates = get_month_end_dates(end_date, months)
+
+    return pd.concat(
+        [
+            compute_rating_snapshot(
+                d, nav_df, bench_df, top_amfi_codes, cons_df, master_df
+            )
+            for d in dates
+        ],
+        ignore_index=True,
+    )
+
+def build_quarterly_rating_history(
+    nav_df,
+    bench_df,
+    top_amfi_codes,
+    cons_df,
+    master_df,
+    end_date,
+    quarters=8,
+):
+    dates = get_quarter_end_dates(end_date, quarters)
+
+    return pd.concat(
+        [
+            compute_rating_snapshot(
+                d, nav_df, bench_df, top_amfi_codes, cons_df, master_df
+            )
+            for d in dates
+        ],
+        ignore_index=True,
+    )
+
+def build_yearly_rating_history(
+    nav_df,
+    bench_df,
+    top_amfi_codes,
+    cons_df,
+    master_df,
+    end_date,
+    years=5,
+):
+    dates = get_year_end_dates(end_date, years)
+
+    return pd.concat(
+        [
+            compute_rating_snapshot(
+                d, nav_df, bench_df, top_amfi_codes, cons_df, master_df
+            )
+            for d in dates
+        ],
+        ignore_index=True,
+    )
 
 
 
@@ -702,7 +884,7 @@ def plot_calendar_year_returns(cal_df):
 
 def plot_calendar_returns_multi(fund_df, category_codes, bench_df):
     fund = calendar_year_returns(fund_df)
-    cat = category_calendar_year_returns(category_codes)
+    cat,cat_indi = category_calendar_year_returns(category_codes)
     bench = calendar_year_returns(bench_df)
 
     df = pd.DataFrame({
@@ -722,6 +904,50 @@ def plot_calendar_returns_multi(fund_df, category_codes, bench_df):
 
     fig.update_layout(height=380)
     return fig
+
+def plot_calendar_returns_multi_comp(fund_df, category_codes, bench_df):
+    # Individual returns
+    fund = calendar_year_returns(fund_df).rename("Selected Fund")
+    bench = calendar_year_returns(bench_df).rename("Benchmark")
+    cat,cat_indi = category_calendar_year_returns(category_codes)
+
+    # ---- reshape to long format ----
+    fund_df_long = fund.reset_index().melt(
+        id_vars="year", var_name="Name", value_name="Return"
+    )
+    fund_df_long["Type"] = "Fund"
+
+    bench_df_long = bench.reset_index().melt(
+        id_vars="year", var_name="Name", value_name="Return"
+    )
+    bench_df_long["Type"] = "Benchmark"
+
+    cat_df_long = cat_indi.reset_index().melt(
+        id_vars="year", var_name="Name", value_name="Return"
+    )
+    cat_df_long['Name'] = cat_df_long['Name'].apply(lambda x:get_fund_name(int_master_df,x))
+    cat_df_long["Type"] = "Category"
+
+    # Combine everything
+    plot_df = pd.concat(
+        [fund_df_long, cat_df_long, bench_df_long],
+        ignore_index=True
+    ).dropna()
+
+    # ---- plot ----
+    fig = px.bar(
+        plot_df,
+        x="year",
+        y="Return",
+        color="Name",
+        barmode="group",
+        title="Calendar Year Returns (Fund vs Category Funds vs Benchmark)",
+        labels={"Return": "Return (%)", "year": "Year"}
+    )
+
+    fig.update_layout(height=420)
+    return fig
+
 
 
 
@@ -868,6 +1094,129 @@ def plot_consistency_vs_aum_rank(cons_df, selected_amfi_code):
     fig.update_layout(
         showlegend=False,
         height=450
+    )
+
+    return fig
+
+def plot_rating_signal(df, title):
+    fig = px.line(
+        df.sort_values("period_end"),
+        x="period_end",
+        y="rating_level",
+        color="scheme_name",
+        line_shape="hv",
+        markers=True,
+        title=title,
+    )
+
+    fig.update_layout(
+        height=550,
+        yaxis=dict(
+            tickmode="array",
+            tickvals=list(RATING_ORDER.values()),
+            ticktext=list(RATING_ORDER.keys()),
+            title="Rating",
+        ),
+        xaxis_title="Period End",
+
+        # ---- LEGEND SETTINGS ----
+        legend=dict(
+            title="Funds",
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02,          # move legend outside plot
+            itemsizing="constant",
+            font=dict(size=11),
+        ),
+        margin=dict(r=300),  # space for legend
+    )
+
+    return fig
+
+def plot_rating_signal_small_multiples(df, title):
+    df = df.sort_values(["scheme_name", "period_end"])
+
+    fig = px.line(
+        df,
+        x="period_end",
+        y="rating_level",
+        facet_row="scheme_name",
+        line_shape="hv",
+        markers=True,
+        height=120 * df["scheme_name"].nunique(),
+        title=title,
+    )
+
+    fig.update_yaxes(
+        tickmode="array",
+        tickvals=list(RATING_ORDER.values()),
+        ticktext=list(RATING_ORDER.keys()),
+        title=None,
+    )
+
+    fig.update_xaxes(title="Period End")
+
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(l=60, r=40, t=80, b=40),
+    )
+
+    # Clean facet titles: remove "scheme_name="
+    fig.for_each_annotation(
+        lambda a: a.update(text=a.text.split("=")[-1])
+    )
+
+    return fig
+
+def plot_rating_heatmap(df, title):
+    # Pivot: funds x time
+    heat_df = df.pivot_table(
+        index="scheme_name",
+        columns="period_end",
+        values="rating_level",
+        aggfunc="last"
+    )
+
+    # Ensure chronological order (columns)
+    heat_df = heat_df.sort_index(axis=1)
+
+    # ---- SORT ROWS: highest latest rating on top ----
+    latest_col = heat_df.columns[-1]
+    heat_df = heat_df.sort_values(
+        by=latest_col,
+        ascending=False
+    )
+
+    # Discrete colorscale
+    colorscale = [
+        [0.00, "#d73027"], [0.20, "#d73027"],  # Weak
+        [0.20, "#fc8d59"], [0.40, "#fc8d59"],  # Average
+        [0.40, "#fee08b"], [0.60, "#fee08b"],  # Good
+        [0.60, "#91cf60"], [0.80, "#91cf60"],  # Very Good
+        [0.80, "#1a9850"], [1.00, "#1a9850"],  # Excellent
+    ]
+
+    fig = px.imshow(
+        heat_df,
+        aspect="auto",
+        color_continuous_scale=colorscale,
+        zmin=1,
+        zmax=5,
+        title=title,
+    )
+
+    fig.update_layout(
+        height=30 * len(heat_df) + 200,
+        coloraxis_colorbar=dict(
+            tickmode="array",
+            tickvals=[1, 2, 3, 4, 5],
+            ticktext=["Weak", "Average", "Good", "Very Good", "Excellent"],
+            title="Rating",
+        ),
+        xaxis_title="Date",
+        yaxis_title="Fund",
     )
 
     return fig
