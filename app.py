@@ -62,7 +62,7 @@ if page == "fund_analytics":
     fund_analytics_page()
 
 elif page == "fund_compare":
-    fund_compare_page_dummy()
+    fund_compare_page()
 
 elif page == "portfolio":
     portfolio_page()

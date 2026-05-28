@@ -47,12 +47,63 @@ TRI_BENCHMARKS = {
     "Nifty Smallcap 250 TRI": "Nifty_Smallcap_250_TRI.csv",
 }
 
+def enhance_category(scheme_name, category):
+    name = scheme_name.lower()
+
+    # -----------------------------
+    # Index Classification
+    # -----------------------------
+    index_keywords = ["index", "nifty", "sensex", "etf", "bse", "nse"]
+
+    if any(k in name for k in index_keywords):
+        if "nifty 50" in name:
+            return "Index - Nifty 50"
+        elif "nifty next 50" in name:
+            return "Index - Nifty Next 50"
+        elif "sensex" in name:
+            return "Index - Sensex"
+        elif "midcap" in name:
+            return "Index - Midcap"
+        elif "smallcap" in name:
+            return "Index - Smallcap"
+        elif "it" in name or "technology" in name:
+            return "Index - IT"
+        else:
+            return "Index - Other"
+
+    # -----------------------------
+    # Thematic Classification
+    # -----------------------------
+    if category and ("sector" in category.lower() or "thematic" in category.lower()):
+        
+        theme_map = {
+            "Technology": ["technology", "tech", "digital"],
+            "Banking & Finance": ["bank", "banking", "financial"],
+            "Pharma & Healthcare": ["pharma", "health"],
+            "Infrastructure": ["infra"],
+            "Energy": ["energy", "oil", "gas", "power"],
+            "Defence": ["defence", "defense"],
+            "FMCG & Consumption": ["fmcg", "consumption", "consumer"],
+            "Automobile": ["auto"],
+            "PSU": ["psu"],
+            "Manufacturing": ["manufacturing"],
+            "ESG": ["esg", "sustainable"]
+        }
+
+        for theme, keywords in theme_map.items():
+            if any(k in name for k in keywords):
+                return f"Equity - Thematic - {theme}"
+
+        return "Equity - Thematic - Other"
+
+    
+    return category
 
 @st.cache_data(ttl=24 * 60 * 60)
 def load_amfi_master():
 
 
-    url = "https://www.amfiindia.com/spages/NAVAll.txt"
+    url = "https://portal.amfiindia.com/spages/NAVAll.txt"
     response = requests.get(url)
     response.raise_for_status()
 
@@ -79,10 +130,14 @@ def load_amfi_master():
 
         # Scheme rows
         if len(parts) >= 4 and parts[0].isdigit():
+
+            scheme_name = parts[3].strip()
+            updated_category = enhance_category(scheme_name, current_category)
+    
             records.append({
                 "amfi_code": parts[0],
                 "scheme_name": parts[3].strip(),
-                "category": current_category
+                "category": updated_category
             })
 
     df = pd.DataFrame(records)
@@ -368,9 +423,10 @@ def monthly_returns(nav_df):
     monthly_ret = monthly_nav.pct_change()
     return monthly_ret.dropna() * 100
 
+
 def read_tri(csv_path):
     df = pd.read_csv(csv_path)
-    df['Date'] = pd.to_datetime(df.Date,format="%d %b %Y")
+    df['Date'] = pd.to_datetime(df.Date,format="%d-%b-%y")
     # df['Total Returns Index'] = df.Price.str.replace(",","")
     df['Total Returns Index'] = df['Total Returns Index'].apply(lambda x:float(x))
     df = df.sort_values("Date")
@@ -378,6 +434,7 @@ def read_tri(csv_path):
     print(df.info())
     return df
 
+    
 def risk_metrics_monthly(
     nav_df,
     bench_df,

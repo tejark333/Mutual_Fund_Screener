@@ -57,7 +57,7 @@ def fund_analytics_page():
         with r2[1]:
             top_n = st.selectbox(
                 "Top N Funds (by AUM)",
-                [5, 10, 20],
+                [5, 10, 15, 20],
                 index=0
             )
     
@@ -85,7 +85,7 @@ def fund_analytics_page():
             amfi_code = get_amfi_code(master_df, category, fund_name)
             nav_df = fetch_nav_data(amfi_code)
     
-            END_DATE = pd.Timestamp("2025-12-31")
+            END_DATE = pd.Timestamp("2026-04-30")
     
             # -----------------------------
             # TABS
@@ -97,7 +97,7 @@ def fund_analytics_page():
                 "🧮 Consistency",
                 "⚠️ Risk Metrics",
                 "📋 Rating",
-                "🕰️ Historical Rating"
+                " Historical Rating"
             ])
     
     
@@ -328,7 +328,7 @@ def fund_analytics_page():
                     cons_df,
                     master_df,
                     END_DATE,
-                    quarters=8
+                    quarters=16
                 )
                 
                 st.plotly_chart(
