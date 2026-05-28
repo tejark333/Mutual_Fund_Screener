@@ -364,7 +364,7 @@ def rolling_returns(df, window_years):
     temp = (
     df.sort_values("date")
       .set_index("date")
-      .resample("M")
+      .resample("ME")
       .last()
       .dropna()
     )
