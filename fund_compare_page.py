@@ -1,5 +1,6 @@
 import streamlit as st
 from analytics import *
+from analytics_fund_compare import *
 import os
 import pandas as pd
 
@@ -111,7 +112,8 @@ def fund_compare_page():
                 "🔄 Rolling Analysis",
                 "🧮 Consistency & Ranking",
                 "⚠️ Risk Metrics",
-                "📋 Detailed Tables"
+                "📋 Detailed Tables",
+                " Historical Rating"
             ])
     
     
@@ -157,12 +159,12 @@ def fund_compare_page():
                 )
     
                 st.plotly_chart(
-                    plot_cagr_summary_multi(
+                    plot_cagr_summary_multi_comp(
                         nav_df, top_amfi_codes, bench_df
                     ),
                     use_container_width=True
                 )
-    
+
             # =============================
             # TAB 3: ROLLING ANALYSIS
             # =============================
@@ -173,7 +175,7 @@ def fund_compare_page():
                 col_name = f"{rolling_window}Y Rolling CAGR (%)"
     
                 st.plotly_chart(
-                    plot_rolling_returns_multi(
+                    plot_rolling_returns_multi_comp(
                         nav_df, top_amfi_codes, bench_df, rolling_window
                     ),
                     use_container_width=True
@@ -317,3 +319,61 @@ def fund_compare_page():
                     ],
                     hide_index=True,
                     use_container_width=True)
+
+            # =============================
+            # TAB 7: HISTORICAL RATING
+            # =============================
+            with tabs[6]:
+                monthly_df = build_monthly_rating_history(
+                    nav_df,
+                    bench_df,
+                    top_amfi_codes,
+                    cons_df,
+                    master_df,
+                    END_DATE,
+                    months=6
+                )
+
+                st.plotly_chart(
+                    plot_rating_heatmap(
+                        monthly_df,
+                        "Fund Rating Heatmap – Monthly (Last 6 Months)",
+                    ),
+                    use_container_width=True,
+                )
+
+                quarterly_df = build_quarterly_rating_history(
+                    nav_df,
+                    bench_df,
+                    top_amfi_codes,
+                    cons_df,
+                    master_df,
+                    END_DATE,
+                    quarters=16
+                )
+
+                st.plotly_chart(
+                    plot_rating_heatmap(
+                        quarterly_df,
+                        "Fund Rating Heatmap – Quarterly (Last 8 Quarters)",
+                    ),
+                    use_container_width=True,
+                )
+
+                yearly_df = build_yearly_rating_history(
+                    nav_df,
+                    bench_df,
+                    top_amfi_codes,
+                    cons_df,
+                    master_df,
+                    END_DATE,
+                    years=10
+                )
+
+                st.plotly_chart(
+                    plot_rating_heatmap(
+                        yearly_df,
+                        "Fund Rating Heatmap – Yearly (Last 10 Years)",
+                    ),
+                    use_container_width=True,
+                )

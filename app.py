@@ -2,9 +2,11 @@ import streamlit as st
 import os
 import pandas as pd
 
+
 from analytics import *
 from fund_analytics_page import *
 from fund_compare_page import *
+from portfolio_analyser_page import *
 
 # if "active_tab" not in st.session_state:
 #     st.session_state.active_tab = 0
@@ -65,6 +67,6 @@ elif page == "fund_compare":
     fund_compare_page()
 
 elif page == "portfolio":
-    portfolio_page()
+    portfolio_analyser_page()
     
 

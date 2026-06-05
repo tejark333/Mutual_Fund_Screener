@@ -426,7 +426,7 @@ def monthly_returns(nav_df):
 
 def read_tri(csv_path):
     df = pd.read_csv(csv_path)
-    df['Date'] = pd.to_datetime(df.Date,format="%d-%b-%y")
+    df['Date'] = pd.to_datetime(df.Date,format="mixed")
     # df['Total Returns Index'] = df.Price.str.replace(",","")
     df['Total Returns Index'] = df['Total Returns Index'].apply(lambda x:float(x))
     df = df.sort_values("Date")
